@@ -11,7 +11,7 @@
   <div class="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
     <h1 class="text-2xl font-bold text-center mb-6">KashBit</h1>
     <div id="wallet-status" class="text-center mb-4 text-gray-600">Wallet not connected</div>
-    <button id="connect-wallet" class="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600 mb-4">Connect Wallet</button>
+    <button id="connect-wallet" class="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600 mb-4">Connect Yoroi Wallet</button>
     <div class="mb-4">
       <label for="ada-amount" class="block text-sm font-medium text-gray-700">ADA Amount</label>
       <input type="number" id="ada-amount" class="mt-1 p-2 w-full border rounded" placeholder="Enter ADA amount" step="0.01">
@@ -31,9 +31,9 @@
       throw new Error('Lucid is not defined');
     }
 
-    // Check if Cardano wallet is available
-    if (!window.cardano) {
-      document.getElementById('tx-status').textContent = 'Error: No Cardano wallet detected. Please install Nami or another compatible wallet.';
+    // Check if Yoroi wallet is available
+    if (!window.cardano || !window.cardano.yoroi) {
+      document.getElementById('tx-status').textContent = 'Error: Yoroi wallet not detected. Please install the Yoroi browser extension.';
       document.getElementById('connect-wallet').disabled = true;
     }
 
@@ -100,19 +100,20 @@
       }
     }
 
-    // Connect wallet
+    // Connect Yoroi wallet
     document.getElementById("connect-wallet").addEventListener("click", async () => {
       try {
         if (!lucid) {
           await initLucid();
         }
-        await lucid.selectWallet("nami"); // Assumes Nami wallet
+        const api = await window.cardano.yoroi.enable(); // Enable Yoroi wallet
+        await lucid.selectWalletFrom(api); // Use Yoroi API with Lucid
         const address = await lucid.wallet.address();
         document.getElementById("wallet-status").textContent = `Connected: ${address.slice(0, 10)}...`;
         document.getElementById("convert-btn").disabled = false;
-        document.getElementById("tx-status").textContent = 'Wallet connected successfully';
+        document.getElementById("tx-status").textContent = 'Yoroi wallet connected successfully';
       } catch (error) {
-        document.getElementById("tx-status").textContent = `Error connecting wallet: ${error.message}`;
+        document.getElementById("tx-status").textContent = `Error connecting Yoroi wallet: ${error.message}`;
       }
     });
 
