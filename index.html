@@ -33,7 +33,7 @@
 
     // Check if Yoroi wallet is available
     if (!window.cardano || !window.cardano.yoroi) {
-      document.getElementById('tx-status').textContent = 'Error: Yoroi wallet not detected. Please install the Yoroi browser extension.';
+      document.getElementById('tx-status').textContent = 'Error: Yoroi wallet not detected. Please install the Yoroi browser extension and set it to Preprod testnet.';
       document.getElementById('connect-wallet').disabled = true;
     }
 
@@ -100,22 +100,40 @@
       }
     }
 
-    // Connect Yoroi wallet
-    document.getElementById("connect-wallet").addEventListener("click", async () => {
-      try {
-        if (!lucid) {
-          await initLucid();
+    // Connect Yoroi wallet with retry
+    async function connectYoroiWallet() {
+      const maxRetries = 3;
+      let attempt = 1;
+
+      while (attempt <= maxRetries) {
+        try {
+          if (!lucid) {
+            await initLucid();
+          }
+          if (!window.cardano.yoroi) {
+            throw new Error('Yoroi wallet not available');
+          }
+          const api = await window.cardano.yoroi.enable(); // Enable Yoroi wallet
+          await lucid.selectWalletFrom(api); // Use Yoroi API with Lucid
+          const address = await lucid.wallet.address();
+          document.getElementById("wallet-status").textContent = `Connected: ${address.slice(0, 10)}...`;
+          document.getElementById("convert-btn").disabled = false;
+          document.getElementById("tx-status").textContent = 'Yoroi wallet connected successfully';
+          return;
+        } catch (error) {
+          if (attempt === maxRetries) {
+            document.getElementById("tx-status").textContent = `Error connecting Yoroi wallet after ${maxRetries} attempts: ${error.message}`;
+            return;
+          }
+          document.getElementById("tx-status").textContent = `Retrying Yoroi connection (attempt ${attempt}/${maxRetries})...`;
+          attempt++;
+          await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1s before retry
         }
-        const api = await window.cardano.yoroi.enable(); // Enable Yoroi wallet
-        await lucid.selectWalletFrom(api); // Use Yoroi API with Lucid
-        const address = await lucid.wallet.address();
-        document.getElementById("wallet-status").textContent = `Connected: ${address.slice(0, 10)}...`;
-        document.getElementById("convert-btn").disabled = false;
-        document.getElementById("tx-status").textContent = 'Yoroi wallet connected successfully';
-      } catch (error) {
-        document.getElementById("tx-status").textContent = `Error connecting Yoroi wallet: ${error.message}`;
       }
-    });
+    }
+
+    // Attach wallet connection handler
+    document.getElementById("connect-wallet").addEventListener("click", connectYoroiWallet);
 
     // Update Naira amount on ADA input
     document.getElementById("ada-amount").addEventListener("input", updateNairaAmount);
