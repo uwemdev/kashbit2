@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KashBit - ADA to Naira Converter</title>
+  <script src="https://unpkg.com/lucid-cardano@0.12.4/web/lucid.min.js" defer></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 flex items-center justify-center h-screen">
+  <div class="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
+    <h1 class="text-2xl font-bold text-center mb-6">KashBit</h1>
+    <div id="wallet-status" class="text-center mb-4 text-gray-600">Wallet not connected</div>
+    <button id="connect-wallet" class="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600 mb-4">Connect Wallet</button>
+    <div class="mb-4">
+      <label for="ada-amount" class="block text-sm font-medium text-gray-700">ADA Amount</label>
+      <input type="number" id="ada-amount" class="mt-1 p-2 w-full border rounded" placeholder="Enter ADA amount" step="0.01">
+    </div>
+    <div class="mb-4">
+      <label id="naira-label" class="block text-sm font-medium text-gray-700">Naira Equivalent (Fetching rate...)</label>
+      <p id="naira-amount" class="mt-1 p-2 w-full bg-gray-100 border rounded">0 NGN</p>
+    </div>
+    <button id="convert-btn" class="w-full bg-green-500 text-white py-2 rounded hover:bg-green-600" disabled>Convert & Send ADA</button>
+    <p id="tx-status" class="mt-4 text-center text-gray-600"></p>
+  </div>
+
+  <script>
+    // Check if Lucid is available
+    if (typeof Lucid === 'undefined') {
+      document.getElementById('tx-status').textContent = 'Error: Lucid library failed to load. Please check your network or try again later.';
+      throw new Error('Lucid is not defined');
+    }
+
+    // Check if Cardano wallet is available
+    if (!window.cardano) {
+      document.getElementById('tx-status').textContent = 'Error: No Cardano wallet detected. Please install Nami or another compatible wallet.';
+      document.getElementById('connect-wallet').disabled = true;
+    }
+
+    // Initialize variables
+    let lucid;
+    let conversionRate = 700; // Fallback rate if API fails
+    const recipientAddress = "addr_test1qzl9q3s3fzwv4g26u7w3y4k6vkgqfg3m2wvmj2vpxq3n0s9y6n4v8w4s8y6n4v8w4s"; // Replace with actual recipient address
+    const blockfrostApiKey = "preview80iu63gdF0gDvHcl7EWsfen1vUKHpvpO";
+
+    // Fetch ADA to NGN price from CoinGecko
+    async function fetchPrice() {
+      try {
+        const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=cardano&vs_currencies=ngn');
+        if (!response.ok) {
+          throw new Error(`HTTP error ${response.status}`);
+        }
+        const data = await response.json();
+        conversionRate = data.cardano.ngn || 700; // Use API rate or fallback
+        document.getElementById('naira-label').textContent = `Naira Equivalent (1 ADA = ${conversionRate.toFixed(2)} NGN)`;
+        updateNairaAmount(); // Update Naira amount with new rate
+      } catch (error) {
+        document.getElementById('tx-status').textContent = `Price fetch failed: ${error.message}. Using fallback rate (700 NGN).`;
+        document.getElementById('naira-label').textContent = `Naira Equivalent (1 ADA = ${conversionRate} NGN)`;
+      }
+    }
+
+    // Update Naira amount based on ADA input
+    function updateNairaAmount() {
+      const ada = parseFloat(document.getElementById("ada-amount").value) || 0;
+      const naira = ada * conversionRate;
+      document.getElementById("naira-amount").textContent = `${naira.toFixed(2)} NGN`;
+    }
+
+    // Validate Blockfrost API key
+    async function validateBlockfrostApiKey() {
+      try {
+        const response = await fetch("https://cardano-preprod.blockfrost.io/api/v0/", {
+          headers: { project_id: blockfrostApiKey }
+        });
+        if (!response.ok) {
+          throw new Error(`Blockfrost API key invalid: ${response.statusText}`);
+        }
+        return true;
+      } catch (error) {
+        document.getElementById('tx-status').textContent = `Blockfrost API error: ${error.message}`;
+        return false;
+      }
+    }
+
+    // Initialize Lucid
+    async function initLucid() {
+      try {
+        if (!(await validateBlockfrostApiKey())) {
+          throw new Error('Invalid Blockfrost API key');
+        }
+        lucid = await Lucid.new(
+          new Blockfrost("https://cardano-preprod.blockfrost.io/api/v0", blockfrostApiKey),
+          "Preprod"
+        );
+        document.getElementById('tx-status').textContent = 'Lucid initialized successfully';
+      } catch (error) {
+        document.getElementById('tx-status').textContent = `Error initializing Lucid: ${error.message}`;
+        throw error;
+      }
+    }
+
+    // Connect wallet
+    document.getElementById("connect-wallet").addEventListener("click", async () => {
+      try {
+        if (!lucid) {
+          await initLucid();
+        }
+        await lucid.selectWallet("nami"); // Assumes Nami wallet
+        const address = await lucid.wallet.address();
+        document.getElementById("wallet-status").textContent = `Connected: ${address.slice(0, 10)}...`;
+        document.getElementById("convert-btn").disabled = false;
+        document.getElementById("tx-status").textContent = 'Wallet connected successfully';
+      } catch (error) {
+        document.getElementById("tx-status").textContent = `Error connecting wallet: ${error.message}`;
+      }
+    });
+
+    // Update Naira amount on ADA input
+    document.getElementById("ada-amount").addEventListener("input", updateNairaAmount);
+
+    // Handle conversion and transaction
+    document.getElementById("convert-btn").addEventListener("click", async () => {
+      const adaAmount = parseFloat(document.getElementById("ada-amount").value);
+      if (!adaAmount || adaAmount <= 0) {
+        document.getElementById("tx-status").textContent = "Please enter a valid ADA amount";
+        return;
+      }
+
+      try {
+        document.getElementById("tx-status").textContent = "Building transaction...";
+        const lovelace = Math.round(adaAmount * 1000000); // Convert ADA to lovelace
+        const tx = await lucid
+          .newTx()
+          .payToAddress(recipientAddress, { lovelace: BigInt(lovelace) })
+          .complete();
+
+        document.getElementById("tx-status").textContent = "Signing transaction...";
+        const signedTx = await tx.sign().complete();
+
+        document.getElementById("tx-status").textContent = "Submitting transaction...";
+        const txHash = await signedTx.submit();
+
+        document.getElementById("tx-status").textContent = `Transaction submitted! Hash: ${txHash} (View on cardanoscan.io)`;
+      } catch (error) {
+        document.getElementById("tx-status").textContent = `Transaction failed: ${error.message}`;
+      }
+    });
+
+    // Initialize on page load
+    window.onload = () => {
+      fetchPrice(); // Fetch price immediately
+      initLucid().catch((error) => {
+        document.getElementById('tx-status').textContent = `Initialization error: ${error.message}`;
+      });
+    };
+  </script>
+</body>
+</html>
